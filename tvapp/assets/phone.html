@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Стена">
+<meta name="theme-color" content="#000000">
+<title>Рисуем на стене</title>
+<style>
+  :root {
+    --tb: 58px; --btn: 42px; --gap: 6px;
+    --sl: env(safe-area-inset-left); --sr: env(safe-area-inset-right);
+    --st: env(safe-area-inset-top); --sb: env(safe-area-inset-bottom);
+    --panel: #1c1c1e; --btnbg: #2c2c2e; --accent: #0a84ff; --text: #f2f2f7; --dim: #8e8e93;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0b0b0d; color: var(--text); overflow: hidden;
+    position: fixed; inset: 0; overscroll-behavior: none; touch-action: manipulation;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    font: 15px -apple-system, system-ui, "Segoe UI", sans-serif; }
+  button { font: inherit; color: inherit; }
+  svg.i { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* ---------- drawing area ---------- */
+  #stage { position: fixed; touch-action: none;
+    left: calc(var(--tb) + var(--sl)); right: var(--sr); top: var(--st); bottom: var(--sb); }
+  #board { position: absolute; background: #000; box-shadow: 0 0 0 1px #2a2a2e; }
+  #board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #placeBox { position: absolute; border: 2px dashed #0a84ff; pointer-events: none; display: none; border-radius: 2px; }
+  #rotate { position: fixed; left: 0; right: 0; top: calc(14px + var(--st)); text-align: center; color: #666;
+    font-size: 13px; pointer-events: none; display: none; }
+
+  /* ---------- toolbar ---------- */
+  #tools { position: fixed; z-index: 5; left: 0; top: 0; bottom: 0; width: calc(var(--tb) + var(--sl));
+    padding: calc(6px + var(--st)) 0 calc(6px + var(--sb)) var(--sl);
+    background: var(--panel); display: flex; flex-direction: column; align-items: center; justify-content: safe center;
+    gap: var(--gap); overflow-y: auto; scrollbar-width: none; }
+  #tools::-webkit-scrollbar { display: none; }
+  .tb { width: var(--btn); height: var(--btn); flex: 0 0 var(--btn); border-radius: 12px; border: 0; padding: 0;
+    background: transparent; display: flex; align-items: center; justify-content: center; position: relative;
+    transition: background .15s, opacity .2s; }
+  .tb:active { background: #3a3a3c; }
+  .tb.on { background: var(--accent); }
+  .tb:disabled { opacity: .3; }
+  .tb .more { position: absolute; right: 3px; bottom: 3px; width: 0; height: 0;
+    border-left: 5px solid transparent; border-bottom: 5px solid currentColor; opacity: .7; }
+  .sep { flex: 0 0 1px; width: 26px; height: 1px; background: #3a3a3c; }
+  #colorBtn .ring { width: 28px; height: 28px; border-radius: 50%; border: 3px solid #fff;
+    display: flex; align-items: center; justify-content: center; }
+  #colorBtn .ring i { display: block; border-radius: 50%; background: #fff; }
+  body.viewer .holder-only { opacity: .25; pointer-events: none; }
+
+  /* ---------- panels ---------- */
+  #backdrop { position: fixed; inset: 0; z-index: 6; display: none; }
+  #backdrop.open { display: block; }
+  .panel { position: fixed; z-index: 7; left: calc(var(--tb) + var(--sl) + 8px); top: calc(8px + var(--st));
+    width: 300px; max-height: calc(100% - 16px - var(--st) - var(--sb)); overflow-y: auto; overscroll-behavior: contain;
+    background: rgba(28,28,30,.98); border-radius: 18px; padding: 14px; display: none;
+    box-shadow: 0 10px 40px rgba(0,0,0,.6); -webkit-overflow-scrolling: touch; }
+  .panel.open { display: block; animation: pop .14s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: scale(.96); } }
+  .ptitle { font-size: 13px; color: var(--dim); margin: 2px 2px 10px; display: flex; justify-content: space-between; }
+  .ptitle + .ptitle, .sect + .ptitle { margin-top: 16px; }
+
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .tool { border: 0; background: var(--btnbg); border-radius: 12px; height: 62px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px; font-size: 10.5px; color: #ddd; padding: 0 2px; }
+  .tool.on { background: var(--accent); color: #fff; }
+  .switch { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 10px 12px;
+    background: var(--btnbg); border-radius: 12px; }
+  .toggle { width: 46px; height: 28px; border-radius: 14px; background: #48484a; position: relative; transition: background .2s; flex: none; }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left .2s; }
+  .toggle.on { background: #34c759; }
+  .toggle.on::after { left: 20px; }
+
+  #colors { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .sw { aspect-ratio: 1; border-radius: 50%; border: 2px solid rgba(255,255,255,.12); position: relative; }
+  .sw.on { box-shadow: 0 0 0 2px #1c1c1e, 0 0 0 4px #fff; }
+  .sw input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; }
+  #custom { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+  #sizes { display: flex; justify-content: space-between; gap: 6px; }
+  .sz { flex: 1; height: 44px; border: 0; border-radius: 12px; background: var(--btnbg); display: flex; align-items: center; justify-content: center; }
+  .sz.on { background: #3a3a3c; box-shadow: inset 0 0 0 2px var(--accent); }
+  .sz i { display: block; border-radius: 50%; background: #fff; }
+  input[type=range] { width: 100%; height: 34px; margin: 8px 0 0; accent-color: var(--accent); touch-action: pan-x; }
+  #sizePrev { display: block; width: 100%; height: 54px; background: #000; border-radius: 12px; margin-top: 6px; }
+
+  .row { display: flex; gap: 8px; }
+  .item { width: 100%; border: 0; background: var(--btnbg); border-radius: 12px; height: 48px; padding: 0 14px;
+    display: flex; align-items: center; gap: 12px; text-align: left; margin-top: 8px; font-size: 15px; }
+  .item:active { background: #3a3a3c; }
+  .item.danger { color: #ff453a; }
+  .field { width: 100%; height: 44px; border-radius: 12px; border: 0; background: var(--btnbg); color: #fff;
+    padding: 0 12px; font: inherit; font-size: 16px; -webkit-user-select: text; user-select: text; }
+  .note { color: var(--dim); font-size: 12.5px; margin-top: 12px; line-height: 1.4; }
+
+  /* ---------- bars, modals, toast ---------- */
+  .pill { position: fixed; z-index: 4; left: calc(var(--tb) + var(--sl)); right: var(--sr); bottom: calc(12px + var(--sb));
+    display: none; justify-content: center; pointer-events: none; }
+  .pill > div { pointer-events: auto; background: rgba(28,28,30,.94); border-radius: 30px; padding: 6px 6px 6px 18px;
+    display: flex; align-items: center; gap: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.5); max-width: 96%; }
+  .pill span { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body.viewer #viewer { display: flex; }
+  body.placing #placeBar { display: flex; }
+  body.placing #tools { opacity: .3; pointer-events: none; }
+  .btn { height: 42px; border-radius: 21px; border: 0; padding: 0 18px; font-weight: 600; background: var(--accent); color: #fff; white-space: nowrap; }
+  .btn.gray { background: #3a3a3c; }
+  .btn.red { background: #ff453a; }
+  .btn:disabled { opacity: .5; }
+  @keyframes shake { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-6px) } 75% { transform: translateX(6px) } }
+  .shake { animation: shake .25s 2; }
+
+  .modal { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; }
+  .modal.open { display: flex; }
+  .modal > div { background: var(--panel); border-radius: 18px; padding: 18px; width: min(360px, 92vw); max-height: 92%; overflow: auto; }
+  .modal h3 { margin: 0 0 6px; font-size: 18px; text-align: center; }
+  .modal p { margin: 0 0 14px; color: var(--dim); font-size: 14px; text-align: center; }
+  .modal .row .btn { flex: 1; }
+  textarea.field { height: 84px; padding: 10px 12px; resize: none; }
+  .seg { display: flex; background: var(--btnbg); border-radius: 10px; padding: 3px; margin: 10px 0 14px; }
+  .seg button { flex: 1; border: 0; background: transparent; height: 32px; border-radius: 8px; }
+  .seg button.on { background: #636366; }
+
+  #toast { position: fixed; z-index: 30; left: 50%; top: calc(12px + var(--st)); transform: translate(-50%, -8px);
+    background: rgba(44,44,46,.97); padding: 10px 18px; border-radius: 20px; opacity: 0; transition: opacity .25s, transform .25s;
+    pointer-events: none; white-space: nowrap; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #offline { position: fixed; z-index: 25; left: 50%; bottom: calc(12px + var(--sb)); transform: translateX(-50%);
+    background: #ff9f0a; color: #000; font-weight: 600; padding: 10px 18px; border-radius: 20px; display: none; white-space: nowrap; }
+  #offline.show { display: block; }
+
+  @media (max-height: 370px) and (orientation: landscape) { :root { --btn: 38px; --gap: 4px; } .sep { margin: 0; } }
+  @media (orientation: portrait) {
+    #stage { left: var(--sl); right: var(--sr); top: var(--st); bottom: calc(var(--tb) + var(--sb)); }
+    #tools { top: auto; right: 0; width: auto; height: calc(var(--tb) + var(--sb)); flex-direction: row; justify-content: safe center;
+      padding: 0 calc(6px + var(--sr)) var(--sb) calc(6px + var(--sl)); overflow-x: auto; overflow-y: hidden; }
+    .sep { width: 1px; height: 26px; }
+    .panel { left: 8px; right: 8px; width: auto; top: auto; bottom: calc(var(--tb) + var(--sb) + 8px);
+      max-height: calc(100% - var(--tb) - var(--sb) - var(--st) - 24px); }
+    .pill { left: 0; right: 0; bottom: calc(var(--tb) + var(--sb) + 12px); }
+    #offline { bottom: calc(var(--tb) + var(--sb) + 12px); }
+    #rotate { display: block; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"><div id="board">
+  <canvas id="base"></canvas><canvas id="live"></canvas><canvas id="laser"></canvas>
+  <div id="placeBox"></div>
+</div></div>
+<div id="rotate">Поверните телефон горизонтально: так удобнее рисовать</div>
+
+<div id="tools">
+  <button class="tb holder-only" id="toolBtn" title="Инструменты"></button>
+  <button class="tb holder-only" id="eraserBtn" title="Ластик"></button>
+  <button class="tb holder-only" id="colorBtn" title="Цвет и толщина"><span class="ring"><i></i></span></button>
+  <span class="sep"></span>
+  <button class="tb holder-only" id="undoBtn" title="Отменить"></button>
+  <button class="tb holder-only" id="redoBtn" title="Повторить"></button>
+  <span class="sep"></span>
+  <button class="tb holder-only" id="photoBtn" title="Фото"></button>
+  <button class="tb" id="moreBtn" title="Ещё"></button>
+</div>
+<input type="file" id="photoInput" accept="image/*" hidden>
+
+<div id="backdrop"></div>
+
+<div class="panel" id="toolsPanel">
+  <div class="ptitle">Инструменты</div>
+  <div class="grid" id="toolGrid"></div>
+  <div class="switch" id="fillSwitch"><span>Фигуры с заливкой</span><span class="toggle" id="fillToggle"></span></div>
+</div>
+
+<div class="panel" id="colorPanel">
+  <div class="sect" id="colorSect">
+    <div class="ptitle">Цвет</div>
+    <div id="colors"></div>
+  </div>
+  <div class="sect" id="sizeSect">
+    <div class="ptitle" style="margin-top:16px"><span id="sizeTitle">Толщина</span><span id="sizeVal"></span></div>
+    <div id="sizes"></div>
+    <input type="range" id="size" min="1" max="120" step="1">
+    <canvas id="sizePrev"></canvas>
+  </div>
+</div>
+
+<div class="panel" id="morePanel">
+  <div class="ptitle"><span>Ваше имя</span><span id="who"></span></div>
+  <input class="field" id="name" type="text" maxlength="24" placeholder="Например, Маша" enterkeyhint="done" autocomplete="off">
+  <button class="item" id="qrItem"></button>
+  <button class="item" id="saveItem"></button>
+  <button class="item danger holder-only" id="clearItem"></button>
+  <div class="note">Совет: в Safari нажмите «Поделиться → На экран „Домой“». Тогда страница откроется на весь экран, без адресной строки.</div>
+</div>
+
+<div class="pill" id="viewer"><div><span id="viewerText">Сейчас рисует …</span><button class="btn" id="askBtn">✋ Попросить кисть</button></div></div>
+<div class="pill" id="placeBar"><div><span>Двигайте фото пальцем, растягивайте двумя</span>
+  <button class="btn gray" id="placeDel">Убрать</button><button class="btn" id="placeOk">Готово</button></div></div>
+
+<div class="modal" id="askModal"><div>
+  <h3 id="askTitle">… просит кисть</h3>
+  <p id="askSub"></p>
+  <div class="row"><button class="btn gray" id="denyBtn">Оставить себе</button><button class="btn" id="giveBtn">Отдать</button></div>
+</div></div>
+
+<div class="modal" id="confirmModal"><div>
+  <h3 id="cfTitle"></h3><p id="cfText"></p>
+  <div class="row"><button class="btn gray" id="cfNo">Отмена</button><button class="btn red" id="cfYes">Да</button></div>
+</div></div>
+
+<div class="modal" id="textModal"><div>
+  <h3>Текст на стене</h3>
+  <textarea class="field" id="textIn" placeholder="Введите текст" enterkeyhint="done"></textarea>
+  <div class="seg" id="textSize"><button data-s="0.03">Мелкий</button><button data-s="0.05">Средний</button><button data-s="0.08">Крупный</button></div>
+  <div class="row"><button class="btn gray" id="textNo">Отмена</button><button class="btn" id="textYes">Добавить</button></div>
+</div></div>
+
+<div id="toast"></div>
+<div id="offline">Нет связи с приставкой — переподключаюсь…</div>
+
+<script src="common.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const SVG = d => '<svg class="i" viewBox="0 0 24 24">' + d + '</svg>';
+  const IC = {
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    marker: '<path d="M9 11l-6 6v3h9l3-3"/><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
+    eraser: '<path d="M20 20H9L4 15a2 2 0 0 1 0-3l8-8a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-8 8"/><path d="M8 11l6 6"/>',
+    laser: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
+    line: '<path d="M5 19L19 5"/>',
+    arrow: '<path d="M5 19L19 5"/><path d="M10 5h9v9"/>',
+    rect: '<rect x="4" y="6" width="16" height="12" rx="1.5"/>',
+    ellipse: '<ellipse cx="12" cy="12" rx="9" ry="6.5"/>',
+    fill: '<path d="M19 11l-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0L19 11z"/><path d="M5 2l5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 2-4 2-4s2 2.4 2 4z"/>',
+    text: '<path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/>',
+    undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+    redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+    photo: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+    qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v.01M14 21h.01M17 21h4v-4"/>',
+    save: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/>',
+  };
+  const TOOLS = [
+    ['pen', 'Кисть'], ['marker', 'Маркер'], ['eraser', 'Ластик'], ['laser', 'Указка'], ['text', 'Текст'],
+    ['line', 'Линия'], ['arrow', 'Стрелка'], ['rect', 'Прямоуг.'], ['ellipse', 'Овал'], ['fill', 'Заливка'],
+  ];
+  const TOOL_NAME = Object.fromEntries(TOOLS);
+  const SHAPES = ['line', 'arrow', 'rect', 'ellipse'];
+  const COLORS = ['#ffffff', '#8e8e93', '#ff3b30', '#ff9500', '#ffd60a', '#34c759', '#00c7be',
+                  '#00e5ff', '#0a84ff', '#5e5ce6', '#bf5af2', '#ff2d92', '#a2845e'];
+  const PRESETS = { pen: [2, 4, 8, 14, 24], marker: [12, 20, 32, 48, 70], eraser: [10, 20, 35, 60, 100], shape: [2, 4, 8, 14, 24] };
+  const LASER_COLOR = '#ff3030';
+
+  // ---------- persistent settings ----------
+  const saved = JSON.parse(localStorage.wp2 || '{}');
+  const S = Object.assign({ tool: 'pen', lastDraw: 'pen', color: '#ffffff', fill: false, textSize: 0.05,
+    sizes: { pen: 6, marker: 24, eraser: 30, shape: 6 } }, saved);
+  const persist = () => localStorage.wp2 = JSON.stringify(S);
+  const group = t => t === 'eraser' ? 'eraser' : t === 'marker' ? 'marker' : SHAPES.includes(t) ? 'shape' : 'pen';
+  const hasSize = t => ['pen', 'marker', 'eraser'].includes(t) || SHAPES.includes(t);
+  const size = () => S.sizes[group(S.tool)];
+
+  const owner = Math.random().toString(36).slice(2, 8);
+  let counter = 0;
+  const newId = () => owner + ':' + (++counter);
+
+  const board = new WP.Board($('base'), $('live'), $('laser'));
+  const stage = $('stage'), boardEl = $('board');
+  let aspect = 16 / 9, dpr = 1, boxCss = { w: 1, h: 1 };
+  let myId = 0, isHolder = false, knownPen = false, online = false;
+
+  // ---------- toast / confirm ----------
+  let toastT;
+  function toast(text, ms) {
+    const t = $('toast'); t.textContent = text; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms || 2400);
+  }
+  function confirmBox(title, text, yes) {
+    return new Promise(res => {
+      $('cfTitle').textContent = title; $('cfText').textContent = text; $('cfYes').textContent = yes || 'Да';
+      $('confirmModal').classList.add('open');
+      const done = v => { $('confirmModal').classList.remove('open'); res(v); };
+      $('cfYes').onclick = () => done(true); $('cfNo').onclick = () => done(false);
+    });
+  }
+
+  // ---------- toolbar ----------
+  $('eraserBtn').innerHTML = SVG(IC.eraser);
+  $('undoBtn').innerHTML = SVG(IC.undo);
+  $('redoBtn').innerHTML = SVG(IC.redo);
+  $('photoBtn').innerHTML = SVG(IC.photo);
+  $('moreBtn').innerHTML = SVG(IC.more);
+  $('qrItem').innerHTML = SVG(IC.qr) + 'Показать QR-код на стене';
+  $('saveItem').innerHTML = SVG(IC.save) + 'Сохранить картинку';
+  $('clearItem').innerHTML = SVG(IC.trash) + 'Очистить стену';
+
+  const toolGrid = $('toolGrid');
+  for (const [t, name] of TOOLS) {
+    const b = document.createElement('button');
+    b.className = 'tool'; b.dataset.t = t;
+    b.innerHTML = SVG(IC[t]) + '<span>' + name + '</span>';
+    b.onclick = () => { setTool(t); closePanels(); };
+    toolGrid.appendChild(b);
+  }
+  $('fillSwitch').onclick = () => { S.fill = !S.fill; persist(); refreshUI(); };
+
+  function setTool(t) {
+    S.tool = t;
+    if (t !== 'eraser') S.lastDraw = t;
+    persist(); refreshUI();
+    const hints = { fill: 'Заливка: нажмите внутри замкнутой области', text: 'Текст: нажмите, где он должен быть',
+      laser: 'Указка: водите пальцем, след сам исчезнет', eraser: 'Ластик' };
+    if (hints[t]) toast(hints[t]);
+  }
+
+  function refreshUI() {
+    const t = S.tool, draw = t === 'eraser' ? S.lastDraw : t;
+    $('toolBtn').innerHTML = SVG(IC[draw]) + '<span class="more"></span>';
+    $('toolBtn').classList.toggle('on', t !== 'eraser');
+    $('eraserBtn').classList.toggle('on', t === 'eraser');
+    toolGrid.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+    $('fillToggle').classList.toggle('on', S.fill);
+    // color button: ring in current color, dot shows thickness
+    const ring = $('colorBtn').querySelector('.ring'), dot = ring.querySelector('i');
+    ring.style.borderColor = S.color;
+    const d = Math.max(4, Math.min(16, size() / 1000 * boxCss.w));
+    dot.style.width = dot.style.height = d + 'px';
+    dot.style.background = S.color;
+    // color panel content depends on tool
+    $('colorSect').style.display = t === 'eraser' ? 'none' : '';
+    $('sizeSect').style.display = hasSize(t) ? '' : 'none';
+    $('sizeTitle').textContent = t === 'eraser' ? 'Размер ластика' : t === 'marker' ? 'Толщина маркера' : 'Толщина';
+    document.querySelectorAll('#colors .sw').forEach(s => s.classList.toggle('on', s.dataset.c === S.color));
+    buildSizes();
+    updateUndo();
+  }
+
+  // ---------- panels ----------
+  const panels = { tools: $('toolsPanel'), color: $('colorPanel'), more: $('morePanel') };
+  let openName = null;
+  function openPanel(name) {
+    closePanels();
+    openName = name; panels[name].classList.add('open'); $('backdrop').classList.add('open');
+    if (name === 'color') drawSizePreview();
+  }
+  function closePanels() {
+    for (const p of Object.values(panels)) p.classList.remove('open');
+    $('backdrop').classList.remove('open'); openName = null;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+  const togglePanel = name => openName === name ? closePanels() : openPanel(name);
+  $('backdrop').addEventListener('pointerdown', e => { e.preventDefault(); closePanels(); });
+
+  $('toolBtn').onclick = () => S.tool === 'eraser' ? (setTool(S.lastDraw), closePanels()) : togglePanel('tools');
+  $('eraserBtn').onclick = () => S.tool !== 'eraser' ? (setTool('eraser'), closePanels()) : togglePanel('color');
+  $('colorBtn').onclick = () => togglePanel('color');
+  $('moreBtn').onclick = () => togglePanel('more');
+
+  // colors
+  const colorsEl = $('colors');
+  for (const c of COLORS) {
+    const s = document.createElement('div');
+    s.className = 'sw'; s.dataset.c = c; s.style.background = c;
+    s.onclick = () => pickColor(c, true);
+    colorsEl.appendChild(s);
+  }
+  const custom = document.createElement('div'); custom.className = 'sw'; custom.id = 'custom';
+  const picker = document.createElement('input'); picker.type = 'color'; picker.value = '#00ff88';
+  custom.appendChild(picker); colorsEl.appendChild(custom);
+  picker.addEventListener('input', () => { custom.dataset.c = picker.value; pickColor(picker.value, false); });
+  picker.addEventListener('change', () => closePanels());
+  function pickColor(c, close) {
+    S.color = c;
+    if (S.tool === 'eraser' || S.tool === 'laser') S.tool = S.lastDraw === 'laser' ? 'pen' : S.lastDraw;
+    persist(); refreshUI(); drawSizePreview();
+    if (close) closePanels();
+  }
+
+  // sizes
+  function buildSizes() {
+    const g = group(S.tool), list = PRESETS[g], cur = S.sizes[g];
+    const el = $('sizes'); el.innerHTML = '';
+    list.forEach((v, i) => {
+      const b = document.createElement('button');
+      b.className = 'sz' + (v === cur ? ' on' : '');
+      const d = [4, 7, 11, 16, 23][i];
+      b.innerHTML = '<i style="width:' + d + 'px;height:' + d + 'px"></i>';
+      b.onclick = () => setSize(v);
+      el.appendChild(b);
+    });
+    $('size').value = cur;
+    $('sizeVal').textContent = cur;
+  }
+  function setSize(v) {
+    S.sizes[group(S.tool)] = v; persist();
+    refreshUI(); drawSizePreview();
+  }
+  $('size').addEventListener('input', e => setSize(+e.target.value));
+
+  function drawSizePreview() {
+    const c = $('sizePrev'), r = c.getBoundingClientRect();
+    if (!r.width) return;
+    c.width = r.width * dpr; c.height = r.height * dpr;
+    const g = c.getContext('2d'), w = c.width, h = c.height;
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    const lw = Math.max(1, size() / 1000 * boxCss.w) * dpr;
+    g.lineCap = 'round'; g.lineWidth = lw;
+    g.strokeStyle = S.tool === 'eraser' ? '#3a3a3c' : S.color;
+    g.globalAlpha = S.tool === 'marker' ? 0.42 : 1;
+    g.beginPath(); g.moveTo(w * 0.1, h * 0.6);
+    g.bezierCurveTo(w * 0.35, h * 0.0, w * 0.6, h * 1.1, w * 0.9, h * 0.4); g.stroke();
+  }
+
+  // more panel
+  const nameEl = $('name');
+  nameEl.value = localStorage.wpName || '';
+  nameEl.addEventListener('change', () => {
+    const n = nameEl.value.trim().slice(0, 24); localStorage.wpName = n; conn.send({ t: 'name', name: n });
+  });
+  nameEl.addEventListener('keydown', e => { if (e.key === 'Enter') nameEl.blur(); });
+  $('qrItem').onclick = () => { conn.send({ t: 'hint' }); closePanels(); toast('QR-код на стене на 20 секунд'); };
+  $('saveItem').onclick = () => { closePanels(); savePicture(); };
+  $('clearItem').onclick = async () => {
+    closePanels();
+    if (await confirmBox('Очистить стену?', 'Всё нарисованное и фото исчезнут у всех.', 'Очистить')) {
+      conn.send({ t: 'clear' }); mine.length = 0; redoStack.length = 0; updateUndo();
+    }
+  };
+
+  async function savePicture() {
+    const c = document.createElement('canvas'); c.width = board.W; c.height = board.H;
+    const g = c.getContext('2d'); g.drawImage($('base'), 0, 0); g.drawImage($('live'), 0, 0);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const file = new File([blob], 'stena.png', { type: 'image/png' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+    } catch (e) { if (e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'stena.png'; a.click();
+  }
+
+  // ---------- undo / redo (own actions) ----------
+  const mine = [], redoStack = [];
+  function record(id) { mine.push(id); redoStack.length = 0; updateUndo(); }
+  function updateUndo() {
+    $('undoBtn').disabled = !mine.some(id => board.byId.has(id));
+    $('redoBtn').disabled = !redoStack.length;
+  }
+  $('undoBtn').onclick = () => {
+    while (mine.length) {
+      const id = mine.pop(), o = board.byId.get(id);
+      if (!o) continue;
+      redoStack.push(JSON.parse(JSON.stringify(o)));
+      board.del(id); conn.send({ t: 'del', id });
+      break;
+    }
+    updateUndo();
+  };
+  $('redoBtn').onclick = () => {
+    const o = redoStack.pop(); if (!o) return;
+    board.add(o, true); conn.send({ t: 'add', obj: o }); conn.send({ t: 'end', id: o.id });
+    mine.push(o.id); updateUndo();
+  };
+
+  // ---------- layout ----------
+  function layout() {
+    dpr = window.devicePixelRatio || 1;
+    const r = stage.getBoundingClientRect(), pad = 6;
+    let w = r.width - pad * 2, h = w / aspect;
+    if (h > r.height - pad * 2) { h = r.height - pad * 2; w = h * aspect; }
+    w = Math.floor(w); h = Math.floor(h);
+    boxCss = { w, h };
+    Object.assign(boardEl.style, { width: w + 'px', height: h + 'px',
+      left: Math.round((r.width - w) / 2) + 'px', top: Math.round((r.height - h) / 2) + 'px' });
+    board.resize(Math.round(w * dpr), Math.round(h * dpr));
+    refreshUI(); updatePlaceBox();
+  }
+  addEventListener('resize', () => setTimeout(layout, 60));
+  addEventListener('orientationchange', () => setTimeout(layout, 350));
+
+  // ---------- input on the wall ----------
+  const ptrs = new Map();
+  function norm(e, clamp) {
+    const r = boardEl.getBoundingClientRect();
+    let x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    if (clamp !== false) { x = Math.min(1, Math.max(0, x)); y = Math.min(1, Math.max(0, y)); }
+    return [+x.toFixed(4), +y.toFixed(4)];
+  }
+  function nudge() { const b = $('viewer').firstElementChild; b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+
+  stage.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (!isHolder) { nudge(); return; }
+    if (!online) { toast('Нет связи с приставкой'); return; }
+    try { stage.setPointerCapture(e.pointerId); } catch (x) {}
+    if (placing) return placeDown(e);
+    const p = norm(e), t = S.tool;
+    if (t === 'pen' || t === 'marker' || t === 'eraser') {
+      const o = { id: newId(), type: 'stroke', mode: t, c: S.color, w: size() / 1000, pts: [p] };
+      conn.send({ t: 'add', obj: o }); board.add(o);
+      ptrs.set(e.pointerId, { k: 'stroke', id: o.id, buf: [] });
+    } else if (t === 'laser') {
+      const st = { k: 'laser', id: newId(), buf: [p] };
+      board.laser(st.id, [p], LASER_COLOR); ptrs.set(e.pointerId, st); schedule();
+    } else if (SHAPES.includes(t)) {
+      const o = { id: newId(), type: 'shape', kind: t, c: S.color, w: size() / 1000,
+        fill: S.fill && (t === 'rect' || t === 'ellipse'), x1: p[0], y1: p[1], x2: p[0], y2: p[1] };
+      conn.send({ t: 'add', obj: o }); board.add(o);
+      ptrs.set(e.pointerId, { k: 'shape', id: o.id, dirty: false });
+    } else {
+      ptrs.set(e.pointerId, { k: 'tap', p, x: e.clientX, y: e.clientY });
+    }
+  });
+
+  stage.addEventListener('pointermove', e => {
+    if (placing) return placeMove(e);
+    const st = ptrs.get(e.pointerId); if (!st) return;
+    e.preventDefault();
+    const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+    if (st.k === 'stroke') {
+      const o = board.byId.get(st.id); if (!o) return;
+      for (const ev of evs) {
+        const p = norm(ev), last = o.pts[o.pts.length - 1];
+        if (last && Math.abs(last[0] - p[0]) < 0.0006 && Math.abs(last[1] - p[1]) < 0.0006) continue;
+        board.pts(st.id, [p]); st.buf.push(p);
+      }
+      schedule();
+    } else if (st.k === 'laser') {
+      const pts = evs.map(ev => norm(ev));
+      board.laser(st.id, pts, LASER_COLOR); st.buf.push(...pts); schedule();
+    } else if (st.k === 'shape') {
+      const p = norm(e);
+      board.upd(st.id, { x2: p[0], y2: p[1] }); st.dirty = true; schedule();
+    }
+  });
+
+  function pointerEnd(e) {
+    if (placing) return placeUp(e);
+    const st = ptrs.get(e.pointerId); if (!st) return;
+    flush(); ptrs.delete(e.pointerId);
+    if (st.k === 'stroke') {
+      board.end(st.id); conn.send({ t: 'end', id: st.id }); record(st.id);
+    } else if (st.k === 'shape') {
+      const o = board.byId.get(st.id);
+      const tiny = o && Math.hypot((o.x2 - o.x1) * boxCss.w, (o.y2 - o.y1) * boxCss.h) < 6;
+      if (tiny) { board.del(st.id); conn.send({ t: 'del', id: st.id }); }
+      else { board.end(st.id); conn.send({ t: 'end', id: st.id }); record(st.id); }
+    } else if (st.k === 'tap' && e.type === 'pointerup' && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 12) {
+      if (S.tool === 'fill') {
+        const o = { id: newId(), type: 'fill', c: S.color, x: st.p[0], y: st.p[1] };
+        conn.send({ t: 'add', obj: o }); board.add(o, true); record(o.id);
+      } else if (S.tool === 'text') openText(st.p);
+    }
+  }
+  stage.addEventListener('pointerup', pointerEnd);
+  stage.addEventListener('pointercancel', pointerEnd);
+  document.addEventListener('gesturestart', e => e.preventDefault());
+
+  let pending = false;
+  function schedule() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; flush(); }); } }
+  function flush() {
+    for (const st of ptrs.values()) {
+      if (st.k === 'stroke' && st.buf.length) { conn.send({ t: 'pts', id: st.id, pts: st.buf }); st.buf = []; }
+      else if (st.k === 'laser' && st.buf.length) { conn.send({ t: 'laser', id: st.id, pts: st.buf, c: LASER_COLOR }); st.buf = []; }
+      else if (st.k === 'shape' && st.dirty) {
+        const o = board.byId.get(st.id); st.dirty = false;
+        if (o) conn.send({ t: 'upd', id: st.id, props: { x2: o.x2, y2: o.y2 } });
+      }
+    }
+    if (placing && placing.dirty) {
+      placing.dirty = false;
+      const o = board.byId.get(placing.id);
+      if (o) conn.send({ t: 'upd', id: o.id, props: { x: o.x, y: o.y, w: o.w, h: o.h } });
+    }
+  }
+
+  // ---------- text ----------
+  let textPos = null;
+  function openText(p) {
+    textPos = p; $('textIn').value = '';
+    document.querySelectorAll('#textSize button').forEach(b => b.classList.toggle('on', +b.dataset.s === S.textSize));
+    $('textModal').classList.add('open');
+    setTimeout(() => $('textIn').focus(), 50);
+  }
+  document.querySelectorAll('#textSize button').forEach(b => b.onclick = () => {
+    S.textSize = +b.dataset.s; persist();
+    document.querySelectorAll('#textSize button').forEach(x => x.classList.toggle('on', x === b));
+  });
+  const closeText = () => { $('textIn').blur(); $('textModal').classList.remove('open'); };
+  $('textNo').onclick = closeText;
+  $('textYes').onclick = () => {
+    const text = $('textIn').value.replace(/\s+$/, '');
+    closeText();
+    if (!text || !textPos) return;
+    const o = { id: newId(), type: 'text', c: S.color, s: S.textSize, x: textPos[0], y: textPos[1], text };
+    conn.send({ t: 'add', obj: o }); board.add(o, true); record(o.id);
+  };
+
+  // ---------- photos ----------
+  let placing = null; // {id, dirty}
+  const gest = new Map(); let g0 = null;
+  $('photoBtn').onclick = () => { closePanels(); $('photoInput').value = ''; $('photoInput').click(); };
+  $('photoInput').onchange = async () => {
+    const f = $('photoInput').files[0]; if (!f) return;
+    toast('Загружаю фото…', 10000);
+    try {
+      const url = URL.createObjectURL(f), im = new Image();
+      im.src = url; await im.decode();
+      const MAX = 1600, k = Math.min(1, MAX / Math.max(im.naturalWidth, im.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const src = c.toDataURL('image/jpeg', 0.85);
+      // fit into 80% of the wall, centered
+      const ia = c.width / c.height;
+      let pw = 0.8 * boxCss.w, ph = pw / ia;
+      if (ph > 0.8 * boxCss.h) { ph = 0.8 * boxCss.h; pw = ph * ia; }
+      const w = pw / boxCss.w, h = ph / boxCss.h;
+      const o = { id: newId(), type: 'image', src, x: (1 - w) / 2, y: (1 - h) / 2, w, h };
+      if (!conn.send({ t: 'add', obj: o })) { toast('Нет связи с приставкой'); return; }
+      board.add(o);
+      placing = { id: o.id, dirty: false };
+      document.body.classList.add('placing');
+      updatePlaceBox();
+      toast('Фото на стене. Подвиньте его и нажмите «Готово»', 3000);
+    } catch (e) {
+      toast('Не получилось открыть фото');
+    }
+  };
+  function updatePlaceBox() {
+    const box = $('placeBox'), o = placing && board.byId.get(placing.id);
+    if (!o) { box.style.display = 'none'; return; }
+    Object.assign(box.style, { display: 'block', left: o.x * boxCss.w + 'px', top: o.y * boxCss.h + 'px',
+      width: o.w * boxCss.w + 'px', height: o.h * boxCss.h + 'px' });
+  }
+  function snapGesture() {
+    const o = board.byId.get(placing.id); if (!o) return;
+    const pts = [...gest.values()];
+    g0 = { x: o.x, y: o.y, w: o.w, h: o.h, pts: pts.map(p => ({ ...p })) };
+  }
+  function placeDown(e) { gest.set(e.pointerId, { cx: e.clientX, cy: e.clientY, n: norm(e, false) }); snapGesture(); }
+  function placeMove(e) {
+    if (!gest.has(e.pointerId)) return;
+    e.preventDefault();
+    gest.set(e.pointerId, { cx: e.clientX, cy: e.clientY, n: norm(e, false) });
+    const o = board.byId.get(placing.id); if (!o || !g0) return;
+    const now = [...gest.values()];
+    let nx = g0.x, ny = g0.y, nw = g0.w, nh = g0.h;
+    if (now.length === 1 && g0.pts.length === 1) {
+      nx = g0.x + now[0].n[0] - g0.pts[0].n[0];
+      ny = g0.y + now[0].n[1] - g0.pts[0].n[1];
+    } else if (now.length >= 2 && g0.pts.length >= 2) {
+      const d0 = Math.hypot(g0.pts[0].cx - g0.pts[1].cx, g0.pts[0].cy - g0.pts[1].cy) || 1;
+      const d1 = Math.hypot(now[0].cx - now[1].cx, now[0].cy - now[1].cy);
+      const f = Math.max(0.05 / g0.w, Math.min(4 / g0.w, d1 / d0));
+      const m0 = [(g0.pts[0].n[0] + g0.pts[1].n[0]) / 2, (g0.pts[0].n[1] + g0.pts[1].n[1]) / 2];
+      const m1 = [(now[0].n[0] + now[1].n[0]) / 2, (now[0].n[1] + now[1].n[1]) / 2];
+      nw = g0.w * f; nh = g0.h * f;
+      nx = m1[0] - (m0[0] - g0.x) * f;
+      ny = m1[1] - (m0[1] - g0.y) * f;
+    }
+    board.upd(placing.id, { x: nx, y: ny, w: nw, h: nh });
+    placing.dirty = true; updatePlaceBox(); schedule();
+  }
+  function placeUp(e) { gest.delete(e.pointerId); snapGesture(); }
+  function finishPlacing(keep) {
+    if (!placing) return;
+    flush();
+    const id = placing.id;
+    if (keep) { board.end(id); conn.send({ t: 'end', id }); record(id); }
+    else { board.del(id); conn.send({ t: 'del', id }); }
+    placing = null; gest.clear(); g0 = null;
+    document.body.classList.remove('placing'); updatePlaceBox();
+    if (keep) toast('Готово! Теперь можно рисовать поверх фото');
+  }
+  $('placeOk').onclick = () => finishPlacing(true);
+  $('placeDel').onclick = () => finishPlacing(false);
+
+  // ---------- pen (who draws) ----------
+  $('askBtn').onclick = () => { conn.send({ t: 'ask' }); $('askBtn').disabled = true; };
+  let askFrom = 0, askTimer;
+  $('giveBtn').onclick = () => { conn.send({ t: 'give' }); closeAsk(); };
+  $('denyBtn').onclick = () => { conn.send({ t: 'deny' }); closeAsk(); };
+  function closeAsk() { $('askModal').classList.remove('open'); clearInterval(askTimer); askFrom = 0; }
+  function openAsk(name, sec) {
+    $('askTitle').textContent = name + ' просит кисть';
+    let left = sec;
+    const upd = () => $('askSub').textContent = 'Если не ответить, кисть перейдёт сама через ' + left + ' с';
+    upd(); clearInterval(askTimer);
+    askTimer = setInterval(() => { left--; if (left <= 0) closeAsk(); else upd(); }, 1000);
+    $('askModal').classList.add('open');
+  }
+  function applyPen(m) {
+    const was = isHolder;
+    isHolder = myId !== 0 && m.holder === myId;
+    document.body.classList.toggle('viewer', !isHolder);
+    $('who').textContent = m.phones > 1 ? 'на связи: ' + m.phones : '';
+    if (!isHolder) {
+      for (const [pid] of ptrs) pointerEnd({ pointerId: pid, type: 'pointercancel' });
+      if (placing) finishPlacing(true);
+      if (openName && openName !== 'more') closePanels();
+      $('askBtn').disabled = m.asking === myId;
+      $('askBtn').textContent = m.asking === myId ? 'Ждём ответа…' : '✋ Попросить кисть';
+      $('viewerText').textContent = m.holder ? 'Сейчас рисует ' + m.name : 'Никто не рисует';
+    }
+    if (askFrom && m.asking !== askFrom) closeAsk();
+    if (knownPen && was !== isHolder) toast(isHolder ? '🖌 Кисть у вас — рисуйте!' : 'Кисть передана: ' + m.name);
+    knownPen = true;
+  }
+
+  // ---------- network ----------
+  let offT;
+  const conn = WP.connect(
+    () => conn.send({ t: 'hello', role: 'phone', name: localStorage.wpName || '' }),
+    m => {
+      switch (m.t) {
+        case 'you': myId = m.id; break;
+        case 'pen': applyPen(m); break;
+        case 'ask': askFrom = m.from; openAsk(m.name, m.sec); break;
+        case 'asked': $('askBtn').disabled = true; $('askBtn').textContent = 'Ждём ответа…'; break;
+        case 'denied': toast(m.name + ' пока не отдаёт кисть');
+          $('askBtn').disabled = false; $('askBtn').textContent = '✋ Попросить кисть'; break;
+        case 'aspect': if (Math.abs(m.a - aspect) > 0.001) { aspect = m.a; layout(); } break;
+        case 'state':
+          if (m.a && Math.abs(m.a - aspect) > 0.001) { aspect = m.a; layout(); }
+          board.reset(m.objs);
+          if (placing && !board.byId.has(placing.id)) { placing = null; document.body.classList.remove('placing'); updatePlaceBox(); }
+          updateUndo(); break;
+        case 'del': board.del(m.id); updateUndo(); break;
+        default: board.handle(m);
+      }
+    },
+    st => {
+      online = st === 'online';
+      clearTimeout(offT);
+      if (online) $('offline').classList.remove('show');
+      else { offT = setTimeout(() => $('offline').classList.add('show'), 1200); knownPen = false; }
+    }
+  );
+
+  refreshUI();
+  layout();
+})();
+</script>
+</body>
+</html>

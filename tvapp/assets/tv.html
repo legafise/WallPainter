@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Wall Paint — TV</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  .layer { position: fixed; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+  #hint { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+          text-align: center; color: #777; font: 3.2vh/1.4 sans-serif; transition: opacity .6s; pointer-events: none; opacity: 0;
+          background: rgba(0,0,0,.82); }
+  #qr { display: block; width: 42vh; height: 42vh; margin: 2.5vh 0; image-rendering: pixelated; border-radius: 1vh; }
+  #hint b { color: #9ad; font-size: 4.2vh; }
+  #hint small { color: #444; font-size: 2.2vh; margin-top: 2vh; }
+</style>
+</head>
+<body>
+<canvas class="layer" id="base"></canvas>
+<canvas class="layer" id="live"></canvas>
+<canvas class="layer" id="laser"></canvas>
+<div id="hint">
+  <div>Наведите камеру телефона на код (телефон в той же сети Wi-Fi)</div>
+  <canvas id="qr" width="1" height="1"></canvas>
+  <div>или откройте <b id="url">…</b></div>
+  <small>кнопка OK на пульте — показать / скрыть код</small>
+</div>
+<script src="qr.js"></script>
+<script src="common.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const board = new WP.Board($('base'), $('live'), $('laser'));
+  const hint = $('hint');
+  let phones = 0, forced = null, forcedTimer, lastUrl = '';
+
+  // The wall stays black while someone is connected; the code is shown only when nobody is.
+  function updateHint() { hint.style.opacity = (forced !== null ? forced : phones === 0) ? '1' : '0'; }
+  function showFor(on, ms) {
+    forced = on; updateHint(); clearTimeout(forcedTimer);
+    forcedTimer = setTimeout(() => { forced = null; updateHint(); }, ms);
+  }
+  window.WPtoggleHint = () => showFor(hint.style.opacity !== '1', 15000);
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    board.resize(Math.round(innerWidth * dpr), Math.round(innerHeight * dpr));
+  }
+  addEventListener('resize', () => { resize(); hello(); });
+  resize();
+
+  function hello() { conn.send({ t: 'hello', role: 'tv', w: innerWidth, h: innerHeight }); }
+  const conn = WP.connect(hello, m => {
+    if (m.url && m.url !== lastUrl) {
+      lastUrl = m.url; $('url').textContent = m.url;
+      try { QR.draw($('qr'), m.url, 600); } catch (e) {}
+    }
+    if (m.t === 'pen') { phones = m.phones; updateHint(); }
+    else if (m.t === 'hint') showFor(true, 20000);
+    else board.handle(m);
+  }, () => {});
+  updateHint();
+})();
+</script>
+</body>
+</html>
